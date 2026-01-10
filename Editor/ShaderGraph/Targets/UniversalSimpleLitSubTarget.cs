@@ -190,6 +190,17 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 #endif
                 collector.AddFloatProperty(Property.SrcBlend, 1.0f);    // always set by material inspector, ok to have incorrect values here
                 collector.AddFloatProperty(Property.DstBlend, 0.0f);    // always set by material inspector, ok to have incorrect values here
+                // Set alpha blend defaults based on surface type
+                collector.AddFloatProperty(Property.SrcBlendAlpha, 1.0f);    // One - used for both opaque and transparent
+                if (target.surfaceType == SurfaceType.Opaque)
+                {
+                    collector.AddFloatProperty(Property.DstBlendAlpha, 0.0f);    // Zero for opaque
+                }
+                else
+                {
+                    collector.AddFloatProperty(Property.DstBlendAlpha, 10.0f);   // OneMinusSrcAlpha for transparent (always set by material inspector)
+                }
+                
                 collector.AddToggleProperty(Property.ZWrite, (target.surfaceType == SurfaceType.Opaque));
                 collector.AddFloatProperty(Property.ZWriteControl, (float)target.zWriteControl);
                 collector.AddFloatProperty(Property.ZTest, (float)target.zTestMode);    // ztest mode is designed to directly pass as ztest
@@ -766,6 +777,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 UniversalStructFields.Varyings.staticLightmapUV,
                 UniversalStructFields.Varyings.dynamicLightmapUV,
                 UniversalStructFields.Varyings.sh,
+                UniversalStructFields.Varyings.probeOcclusion,
                 UniversalStructFields.Varyings.fogFactorAndVertexLight, // fog and vertex lighting, vert input is dependency
                 UniversalStructFields.Varyings.shadowCoord,             // shadow coord, vert input is dependency
             };
@@ -780,6 +792,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 UniversalStructFields.Varyings.staticLightmapUV,
                 UniversalStructFields.Varyings.dynamicLightmapUV,
                 UniversalStructFields.Varyings.sh,
+                UniversalStructFields.Varyings.probeOcclusion,
                 UniversalStructFields.Varyings.fogFactorAndVertexLight, // fog and vertex lighting, vert input is dependency
                 UniversalStructFields.Varyings.shadowCoord,             // shadow coord, vert input is dependency
             };
@@ -852,19 +865,18 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
             public static readonly KeywordCollection Forward = new KeywordCollection
             {
-#if UNITY_2022_2_OR_NEWER
                 { CoreKeywordDescriptors.ScreenSpaceAmbientOcclusion },
-#else
-                { ScreenSpaceAmbientOcclusion },
-#endif
                 { CoreKeywordDescriptors.StaticLightmap },
                 { CoreKeywordDescriptors.DynamicLightmap },
                 { CoreKeywordDescriptors.DirectionalLightmapCombined },
+                { CoreKeywordDescriptors.UseLegacyLightmaps },
+                { CoreKeywordDescriptors.LightmapBicubicSampling },
                 { CoreKeywordDescriptors.MainLightShadows },
                 { CoreKeywordDescriptors.AdditionalLights },
                 { CoreKeywordDescriptors.AdditionalLightShadows },
                 { CoreKeywordDescriptors.ReflectionProbeBlending },
                 { CoreKeywordDescriptors.ReflectionProbeBoxProjection },
+                { CoreKeywordDescriptors.ReflectionProbeAtlas },
                 { CoreKeywordDescriptors.ShadowsSoft },
                 { CoreKeywordDescriptors.LightmapShadowMixing },
                 { CoreKeywordDescriptors.ShadowsShadowmask },
@@ -872,11 +884,8 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreKeywordDescriptors.LightLayers },
                 { CoreKeywordDescriptors.DebugDisplay },
                 { CoreKeywordDescriptors.LightCookies },
-#if UNITY_2022_2_OR_NEWER
-                { CoreKeywordDescriptors.ForwardPlus },
-#else
-                { CoreKeywordDescriptors.ClusteredRendering },
-#endif
+                { CoreKeywordDescriptors.ClusterLightLoop },
+                { CoreKeywordDescriptors.EvaluateSh },
             };
 
 #if UNITY_2022_2_15_OR_NEWER
@@ -933,6 +942,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreIncludes.DOTSPregraph },
                 { CoreIncludes.WriteRenderLayersPregraph },
 #endif
+                { CoreIncludes.ProbeVolumePregraph },
                 { CoreIncludes.CorePregraph },
                 { kShadows, IncludeLocation.Pregraph },
                 { CoreIncludes.ShaderGraphPregraph },
@@ -950,6 +960,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreIncludes.DOTSPregraph },
                 { CoreIncludes.WriteRenderLayersPregraph },
 #endif
+                { CoreIncludes.ProbeVolumePregraph },
                 { CoreIncludes.CorePregraph },
                 { kShadows, IncludeLocation.Pregraph },
                 { CoreIncludes.ShaderGraphPregraph },

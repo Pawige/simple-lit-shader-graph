@@ -22,11 +22,7 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
         inputData.normalWS = input.normalWS;
     #endif
     inputData.normalWS = NormalizeNormalPerPixel(inputData.normalWS);
-#if UNITY_VERSION >= 202220
     inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
-#else
-    inputData.viewDirectionWS = SafeNormalize(GetWorldSpaceViewDir(input.positionWS));
-#endif
 
     #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
         inputData.shadowCoord = input.shadowCoord;
@@ -38,13 +34,8 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.fogFactorAndVertexLight.x);
     inputData.vertexLighting = input.fogFactorAndVertexLight.yzw;
-#if defined(DYNAMICLIGHTMAP_ON)
-    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.dynamicLightmapUV.xy, input.sh, inputData.normalWS);
-#else
-    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.sh, inputData.normalWS);
-#endif
+
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
-    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
 
     #if defined(DEBUG_DISPLAY)
     #if defined(DYNAMICLIGHTMAP_ON)
@@ -55,6 +46,31 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
     #else
     inputData.vertexSH = input.sh;
     #endif
+
+    #if defined(USE_APV_PROBE_OCCLUSION)
+    inputData.probeOcclusion = input.probeOcclusion;
+    #endif
+
+    inputData.positionCS = input.positionCS;
+    #endif
+}
+
+void InitializeBakedGIData(Varyings input, inout InputData inputData)
+{
+    #if defined(DYNAMICLIGHTMAP_ON)
+    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.dynamicLightmapUV.xy, input.sh, inputData.normalWS);
+    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
+    #elif !defined(LIGHTMAP_ON) && (defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
+    inputData.bakedGI = SAMPLE_GI(input.sh,
+        GetAbsolutePositionWS(inputData.positionWS),
+        inputData.normalWS,
+        inputData.viewDirectionWS,
+        input.positionCS.xy,
+        input.probeOcclusion,
+        inputData.shadowMask);
+    #else
+    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.sh, inputData.normalWS);
+    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
     #endif
 }
 
@@ -67,24 +83,19 @@ PackedVaryings vert(Attributes input)
     return packedOutput;
 }
 
-#if UNITY_VERSION >= 202220
 void frag(
     PackedVaryings packedInput
     , out half4 outColor : SV_Target0
 #ifdef _WRITE_RENDERING_LAYERS
-    , out float4 outRenderingLayers : SV_Target1
+    , out uint outRenderingLayers : SV_Target1
 #endif
 )
-#else
-half4 frag(PackedVaryings packedInput) : SV_TARGET
-#endif //UNITY_VERSION 202220
 {
     Varyings unpacked = UnpackVaryings(packedInput);
     UNITY_SETUP_INSTANCE_ID(unpacked);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(unpacked);
     SurfaceDescription surfaceDescription = BuildSurfaceDescription(unpacked);
 
-#if UNITY_VERSION >= 202220
 #if defined(_SURFACE_TYPE_TRANSPARENT)
     bool isTransparent = true;
 #else
@@ -102,29 +113,21 @@ half4 frag(PackedVaryings packedInput) : SV_TARGET
     #if defined(LOD_FADE_CROSSFADE) && USE_UNITY_CROSSFADE
         LODFadeCrossFade(unpacked.positionCS);
     #endif
-#else
-    #if _ALPHATEST_ON
-        half alpha = surfaceDescription.Alpha;
-        clip(alpha - surfaceDescription.AlphaClipThreshold);
-    #elif _SURFACE_TYPE_TRANSPARENT
-        half alpha = surfaceDescription.Alpha;
-    #else
-        half alpha = 1;
-    #endif
-#endif //UNITY_VERSION 202220
 
     InputData inputData;
     InitializeInputData(unpacked, surfaceDescription, inputData);
-    // TODO: Mip debug modes would require this, open question how to do this on ShaderGraph.
-    //SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.texCoord1.xy, _MainTex);
+    #ifdef VARYINGS_NEED_TEXCOORD0
+        SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.texCoord0);
+    #else
+        SETUP_DEBUG_TEXTURE_DATA_NO_UV(inputData);
+    #endif
 
-    //#ifdef _SPECULAR_SETUP
-    #ifdef _SPECULAR_COLOR
+    #ifdef _SPECULAR_SETUP
         float3 specular = surfaceDescription.Specular;
-    //    float metallic = 1;
+        float metallic = 1;
     #else
         float3 specular = 0;
-    //    float metallic = surfaceDescription.Metallic;
+        float metallic = surfaceDescription.Metallic;
     #endif
 
     half3 normalTS = half3(0, 0, 0);
@@ -144,29 +147,27 @@ half4 frag(PackedVaryings packedInput) : SV_TARGET
     surface.clearCoatMask       = 0;
     surface.clearCoatSmoothness = 1;
 
-#if UNITY_VERSION >= 202210
-    surface.albedo = AlphaModulate(surface.albedo, surface.alpha);
-#endif
+    #ifdef _CLEARCOAT
+        surface.clearCoatMask       = saturate(surfaceDescription.CoatMask);
+        surface.clearCoatSmoothness = saturate(surfaceDescription.CoatSmoothness);
+    #endif
 
-#ifdef _DBUFFER
+    surface.albedo = AlphaModulate(surface.albedo, surface.alpha);
+
+#if defined(_DBUFFER)
     ApplyDecalToSurfaceData(unpacked.positionCS, surface, inputData);
 #endif
 
+    InitializeBakedGIData(unpacked, inputData);
+    
     half4 color = UniversalFragmentBlinnPhong(inputData, surface);
-
     color.rgb = MixFog(color.rgb, inputData.fogCoord);
-#if UNITY_VERSION >= 202220
 
     color.a = OutputAlpha(color.a, isTransparent);
 
     outColor = color;
 
-#ifdef _WRITE_RENDERING_LAYERS
-    uint renderingLayers = GetMeshRenderingLayer();
-    outRenderingLayers = float4(EncodeMeshRenderingLayer(renderingLayers), 0, 0, 0);
-#endif
-
-#else
-    return color;
-#endif //UNITY_VERSION 202220
+    #ifdef _WRITE_RENDERING_LAYERS
+    outRenderingLayers = EncodeMeshRenderingLayer();
+    #endif
 }
