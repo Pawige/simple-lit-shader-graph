@@ -5,11 +5,8 @@
 #endif
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using UnityEditor.ShaderGraph;
-using UnityEditor.ShaderGraph.Legacy;
-using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.Assertions;
 using UnityEngine.Rendering.Universal;
@@ -26,11 +23,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         // Should be in UniversalTarget
         public const string kSimpleLitMaterialTypeTag = "\"UniversalMaterialType\" = \"SimpleLit\"";
 
-#if UNITY_2022_2_OR_NEWER
         public override int latestVersion => 2;
-#elif UNITY_2022_1_OR_NEWER
-        public override int latestVersion => 1;
-#endif
 
         //[SerializeField]
         static WorkflowMode m_WorkflowMode = WorkflowMode.Specular;
@@ -41,10 +34,8 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         [SerializeField]
         NormalDropOffSpace m_NormalDropOffSpace = NormalDropOffSpace.Tangent;
 
-#if UNITY_2022_1_OR_NEWER
         [SerializeField]
         bool m_BlendModePreserveSpecular = true;
-#endif
 
         public UniversalSimpleLitSubTarget()
         {
@@ -52,7 +43,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         }
 
         // This should really be a dedicated ShaderID with relevant logic in ShaderUtils
-        protected override ShaderID shaderID => ShaderID.Unknown;
+        protected override ShaderID shaderID => ShaderID.SimpleLit;
 
         public static WorkflowMode workflowMode
         {
@@ -458,7 +449,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 //if (target.allowMaterialOverride)
                 //    pass.keywords.Add(LitDefines.SpecularSetup);
                 //else if (workflowMode == WorkflowMode.Specular)
-                pass.defines.Add(SimpleLitDefines.SpecularSetup, 1);
+                //pass.defines.Add(SimpleLitDefines.SpecularSetup, 1);
             }
 
             static void AddSpecularHighlightsControlToPass(ref PassDescriptor pass, UniversalTarget target, bool specularHighlights)
@@ -816,7 +807,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         #region Defines
         static class SimpleLitDefines
         {
-            public static readonly KeywordDescriptor SpecularSetup = new KeywordDescriptor()
+            /*public static readonly KeywordDescriptor SpecularSetup = new KeywordDescriptor()
             {
                 displayName = "Specular Setup",
                 referenceName = "_SPECULAR_SETUP",
@@ -824,7 +815,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 definition = KeywordDefinition.ShaderFeature,
                 scope = KeywordScope.Local,
                 stages = KeywordShaderStage.Fragment
-            };
+            };*/
 
             public static readonly KeywordDescriptor SpecularColor = new KeywordDescriptor()
             {
@@ -849,19 +840,6 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 definition = KeywordDefinition.ShaderFeature,
                 scope = KeywordScope.Local,
             };
-
-#if UNITY_2022_2_OR_NEWER
-#else
-            public static readonly KeywordDescriptor ScreenSpaceAmbientOcclusion = new KeywordDescriptor()
-            {
-                displayName = "Screen Space Ambient Occlusion",
-                referenceName = "_SCREEN_SPACE_OCCLUSION",
-                type = KeywordType.Boolean,
-                definition = KeywordDefinition.MultiCompile,
-                scope = KeywordScope.Global,
-                stages = KeywordShaderStage.Fragment,
-            };
-#endif
 
             public static readonly KeywordCollection Forward = new KeywordCollection
             {
@@ -888,37 +866,25 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreKeywordDescriptors.EvaluateSh },
             };
 
-#if UNITY_2022_2_15_OR_NEWER
-#elif UNITY_2022_2_OR_NEWER
-            public static readonly KeywordCollection DOTSForward = new KeywordCollection
-            {
-                { Forward },
-                { CoreKeywordDescriptors.WriteRenderingLayers },
-            };
-#endif
-
             public static readonly KeywordCollection GBuffer = new KeywordCollection
             {
                 { CoreKeywordDescriptors.StaticLightmap },
                 { CoreKeywordDescriptors.DynamicLightmap },
                 { CoreKeywordDescriptors.DirectionalLightmapCombined },
+                { CoreKeywordDescriptors.UseLegacyLightmaps },
+                { CoreKeywordDescriptors.LightmapBicubicSampling },
                 { CoreKeywordDescriptors.MainLightShadows },
                 { CoreKeywordDescriptors.ReflectionProbeBlending },
                 { CoreKeywordDescriptors.ReflectionProbeBoxProjection },
                 { CoreKeywordDescriptors.ShadowsSoft },
                 { CoreKeywordDescriptors.LightmapShadowMixing },
+                { CoreKeywordDescriptors.ShadowsShadowmask },
                 { CoreKeywordDescriptors.MixedLightingSubtractive },
                 { CoreKeywordDescriptors.DBuffer },
                 { CoreKeywordDescriptors.GBufferNormalsOct },
-#if UNITY_2022_2_15_OR_NEWER
-                { CoreKeywordDescriptors.LightLayers },
-#elif UNITY_2022_2_OR_NEWER
-                { CoreKeywordDescriptors.WriteRenderingLayers },
-#else
-                { CoreKeywordDescriptors.LightLayers },
-#endif
                 { CoreKeywordDescriptors.RenderPassEnabled },
                 { CoreKeywordDescriptors.DebugDisplay },
+                { CoreKeywordDescriptors.ClusterLightLoop },
             };
         }
         #endregion
@@ -929,7 +895,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             const string kShadows = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl";
             const string kMetaInput = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/MetaInput.hlsl";
             const string kForwardPass = "Packages/com.pawige.universal-shadergraph-extensions/Editor/ShaderGraph/Includes/SimpleLitForwardPass.hlsl";
-            const string kGBuffer = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/UnityGBuffer.hlsl";
+            const string kGBuffer = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutput.hlsl";
             const string kSimpleLitGBufferPass = "Packages/com.pawige.universal-shadergraph-extensions/Editor/ShaderGraph/Includes/SimpleLitGBufferPass.hlsl";
             const string kLightingMetaPass = "Packages/com.unity.render-pipelines.universal/Editor/ShaderGraph/Includes/LightingMetaPass.hlsl";
             // TODO : Replace 2D for Simple one
@@ -940,6 +906,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 // Pre-graph
 #if UNITY_2022_2_15_OR_NEWER
                 { CoreIncludes.DOTSPregraph },
+                { CoreIncludes.FogPregraph },
                 { CoreIncludes.WriteRenderLayersPregraph },
 #endif
                 { CoreIncludes.ProbeVolumePregraph },
@@ -956,10 +923,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
             public static readonly IncludeCollection GBuffer = new IncludeCollection
             {
                 // Pre-graph
-#if UNITY_2022_2_15_OR_NEWER
                 { CoreIncludes.DOTSPregraph },
+                { CoreIncludes.FogPregraph },
                 { CoreIncludes.WriteRenderLayersPregraph },
-#endif
                 { CoreIncludes.ProbeVolumePregraph },
                 { CoreIncludes.CorePregraph },
                 { kShadows, IncludeLocation.Pregraph },
@@ -969,7 +935,6 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 // Post-graph
                 { CoreIncludes.CorePostgraph },
                 { kGBuffer, IncludeLocation.Postgraph },
-                //{ kPBRGBufferPass, IncludeLocation.Postgraph },
                 { kSimpleLitGBufferPass, IncludeLocation.Postgraph },
             };
 

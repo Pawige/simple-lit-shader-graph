@@ -1,8 +1,12 @@
 {
   "name": "com.pawige.universal-shadergraph-extensions",
   "displayName": "URP Simple Lit ShaderGraph Target",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "documentationUrl": "https://github.com/Pawige/simple-lit-shader-graph",
   "licensesUrl": "https://github.com/Pawige/simple-lit-shader-graph/blob/main/LICENSE",
-  "description": "This plugin simply adds a Simple Lit material (SubTarget) to the Universal target for Shader Graph. Originally from https://github.com/Zallist/unity.zallist.universal-simple-lit-shadergraph-target to work with later URP versions."
+  "description": "This plugin simply adds a Simple Lit material (SubTarget) to the Universal target for Shader Graph. Modified from https://github.com/Zallist/unity.zallist.universal-simple-lit-shadergraph-target to work with newer URP versions.",
+  "author": {
+    "name": "Paul Gerla",
+    "url": "https://github.com/Pawige"
+  }
 }

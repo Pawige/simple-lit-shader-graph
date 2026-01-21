@@ -4,38 +4,46 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
     inputData = (InputData)0;
 
     inputData.positionWS = input.positionWS;
+    inputData.positionCS = input.positionCS;
 
     #ifdef _NORMALMAP
-        // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
-        float crossSign = (input.tangentWS.w > 0.0 ? 1.0 : -1.0) * GetOddNegativeScale();
-        float3 bitangent = crossSign * cross(input.normalWS.xyz, input.tangentWS.xyz);
+    // IMPORTANT! If we ever support Flip on double sided materials ensure bitangent and tangent are NOT flipped.
+    float crossSign = (input.tangentWS.w > 0.0 ? 1.0 : -1.0) * GetOddNegativeScale();
+    float3 bitangent = crossSign * cross(input.normalWS.xyz, input.tangentWS.xyz);
 
-        inputData.tangentToWorld = half3x3(input.tangentWS.xyz, bitangent.xyz, input.normalWS.xyz);
-        #if _NORMAL_DROPOFF_TS
-            inputData.normalWS = TransformTangentToWorld(surfaceDescription.NormalTS, inputData.tangentToWorld);
-        #elif _NORMAL_DROPOFF_OS
-            inputData.normalWS = TransformObjectToWorldNormal(surfaceDescription.NormalOS);
-        #elif _NORMAL_DROPOFF_WS
-            inputData.normalWS = surfaceDescription.NormalWS;
-        #endif
+    inputData.tangentToWorld = half3x3(input.tangentWS.xyz, bitangent.xyz, input.normalWS.xyz);
+    #if _NORMAL_DROPOFF_TS
+    inputData.normalWS = TransformTangentToWorld(surfaceDescription.NormalTS, inputData.tangentToWorld);
+    #elif _NORMAL_DROPOFF_OS
+    inputData.normalWS = TransformObjectToWorldNormal(surfaceDescription.NormalOS);
+    #elif _NORMAL_DROPOFF_WS
+    inputData.normalWS = surfaceDescription.NormalWS;
+    #endif
     #else
-        inputData.normalWS = input.normalWS;
+    inputData.normalWS = input.normalWS;
     #endif
     inputData.normalWS = NormalizeNormalPerPixel(inputData.normalWS);
+    #if UNITY_VERSION >= 202220
     inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
-
-    #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
-        inputData.shadowCoord = input.shadowCoord;
-    #elif defined(MAIN_LIGHT_CALCULATE_SHADOWS)
-        inputData.shadowCoord = TransformWorldToShadowCoord(inputData.positionWS);
     #else
-        inputData.shadowCoord = float4(0, 0, 0, 0);
+    inputData.viewDirectionWS = SafeNormalize(GetWorldSpaceViewDir(input.positionWS));
+    #endif
+
+    #if defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+    inputData.shadowCoord = TransformWorldToShadowCoord(inputData.positionWS);
+    #else
+    inputData.shadowCoord = float4(0, 0, 0, 0);
     #endif
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.fogFactorAndVertexLight.x);
     inputData.vertexLighting = input.fogFactorAndVertexLight.yzw;
-
+    /*#if defined(DYNAMICLIGHTMAP_ON)
+        inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.dynamicLightmapUV.xy, input.sh, inputData.normalWS);
+    #else
+        inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.sh, inputData.normalWS);
+    #endif*/
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
 
     #if defined(DEBUG_DISPLAY)
     #if defined(DYNAMICLIGHTMAP_ON)
@@ -46,12 +54,6 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
     #else
     inputData.vertexSH = input.sh;
     #endif
-
-    #if defined(USE_APV_PROBE_OCCLUSION)
-    inputData.probeOcclusion = input.probeOcclusion;
-    #endif
-
-    inputData.positionCS = input.positionCS;
     #endif
 }
 
@@ -113,23 +115,17 @@ void frag(
     #if defined(LOD_FADE_CROSSFADE) && USE_UNITY_CROSSFADE
         LODFadeCrossFade(unpacked.positionCS);
     #endif
-
+    
+    float3 specular = 0;
+    
     InputData inputData;
     InitializeInputData(unpacked, surfaceDescription, inputData);
-    #ifdef VARYINGS_NEED_TEXCOORD0
-        SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.texCoord0);
-    #else
-        SETUP_DEBUG_TEXTURE_DATA_NO_UV(inputData);
-    #endif
-
-    #ifdef _SPECULAR_SETUP
-        float3 specular = surfaceDescription.Specular;
-        float metallic = 1;
-    #else
-        float3 specular = 0;
-        float metallic = surfaceDescription.Metallic;
-    #endif
-
+#ifdef VARYINGS_NEED_TEXCOORD0
+    SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.texCoord0);
+#else
+    SETUP_DEBUG_TEXTURE_DATA_NO_UV(inputData);
+#endif
+    
     half3 normalTS = half3(0, 0, 0);
     #if defined(_NORMALMAP) && defined(_NORMAL_DROPOFF_TS)
         normalTS = surfaceDescription.NormalTS;
@@ -147,11 +143,6 @@ void frag(
     surface.clearCoatMask       = 0;
     surface.clearCoatSmoothness = 1;
 
-    #ifdef _CLEARCOAT
-        surface.clearCoatMask       = saturate(surfaceDescription.CoatMask);
-        surface.clearCoatSmoothness = saturate(surfaceDescription.CoatSmoothness);
-    #endif
-
     surface.albedo = AlphaModulate(surface.albedo, surface.alpha);
 
 #if defined(_DBUFFER)
@@ -162,7 +153,7 @@ void frag(
     
     half4 color = UniversalFragmentBlinnPhong(inputData, surface);
     color.rgb = MixFog(color.rgb, inputData.fogCoord);
-
+    
     color.a = OutputAlpha(color.a, isTransparent);
 
     outColor = color;

@@ -23,11 +23,7 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
         inputData.normalWS = input.normalWS;
     #endif
     inputData.normalWS = NormalizeNormalPerPixel(inputData.normalWS);
-#if UNITY_VERSION >= 202220
     inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
-#else
-    inputData.viewDirectionWS = SafeNormalize(GetWorldSpaceViewDir(input.positionWS));
-#endif
 
 #if defined(MAIN_LIGHT_CALCULATE_SHADOWS)
     inputData.shadowCoord = TransformWorldToShadowCoord(inputData.positionWS);
@@ -37,13 +33,8 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.fogFactorAndVertexLight.x);
     inputData.vertexLighting = input.fogFactorAndVertexLight.yzw;
-/*#if defined(DYNAMICLIGHTMAP_ON)
-    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.dynamicLightmapUV.xy, input.sh, inputData.normalWS);
-#else
-    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.sh, inputData.normalWS);
-#endif*/
+
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
-    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
 
     #if defined(DEBUG_DISPLAY)
     #if defined(DYNAMICLIGHTMAP_ON)
@@ -54,7 +45,29 @@ void InitializeInputData(Varyings input, SurfaceDescription surfaceDescription, 
     #else
     inputData.vertexSH = input.sh;
     #endif
+    #if defined(USE_APV_PROBE_OCCLUSION)
+    inputData.probeOcclusion = input.probeOcclusion;
     #endif
+    #endif
+}
+
+void InitializeBakedGIData(Varyings input, inout InputData inputData)
+{
+#if defined(DYNAMICLIGHTMAP_ON)
+    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.dynamicLightmapUV.xy, input.sh, inputData.normalWS);
+    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
+#elif !defined(LIGHTMAP_ON) && (defined(PROBE_VOLUMES_L1) || defined(PROBE_VOLUMES_L2))
+    inputData.bakedGI = SAMPLE_GI(input.sh,
+        GetAbsolutePositionWS(inputData.positionWS),
+        inputData.normalWS,
+        inputData.viewDirectionWS,
+        inputData.positionCS.xy,
+        input.probeOcclusion,
+        inputData.shadowMask);
+#else
+    inputData.bakedGI = SAMPLE_GI(input.staticLightmapUV, input.sh, inputData.normalWS);
+    inputData.shadowMask = SAMPLE_SHADOWMASK(input.staticLightmapUV);
+#endif
 }
 
 PackedVaryings vert(Attributes input)
@@ -66,14 +79,14 @@ PackedVaryings vert(Attributes input)
     return packedOutput;
 }
 
-FragmentOutput frag(PackedVaryings packedInput)
+GBufferFragOutput frag(PackedVaryings packedInput)
 {
     Varyings unpacked = UnpackVaryings(packedInput);
     UNITY_SETUP_INSTANCE_ID(unpacked);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(unpacked);
     SurfaceDescription surfaceDescription = BuildSurfaceDescription(unpacked);
 
-    #if _ALPHATEST_ON
+    #if defined(_ALPHATEST_ON)
         half alpha = surfaceDescription.Alpha;
         clip(alpha - surfaceDescription.AlphaClipThreshold);
     #elif _SURFACE_TYPE_TRANSPARENT
@@ -82,73 +95,46 @@ FragmentOutput frag(PackedVaryings packedInput)
         half alpha = 1;
     #endif
 
-#if UNITY_VERSION >= 202220
     #if defined(LOD_FADE_CROSSFADE) && USE_UNITY_CROSSFADE
         LODFadeCrossFade(unpacked.positionCS);
     #endif
-#endif
 
     InputData inputData;
     InitializeInputData(unpacked, surfaceDescription, inputData);
-    // TODO: Mip debug modes would require this, open question how to do this on ShaderGraph.
-    //SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.uv, _MainTex);
+    #ifdef VARYINGS_NEED_TEXCOORD0
+        SETUP_DEBUG_TEXTURE_DATA(inputData, unpacked.texCoord0);
+    #else
+        SETUP_DEBUG_TEXTURE_DATA_NO_UV(inputData);
+    #endif
 
-    //ifdef _SPECULAR_SETUP
-    #ifdef _SPECULAR_COLOR
+    #ifdef _SPECULAR_SETUP
         float3 specular = surfaceDescription.Specular;
-        //float metallic = 1;
+        float metallic = 1;
     #else
         float3 specular = 0;
-        //float metallic = surfaceDescription.Metallic;
+        float metallic = 0;
     #endif
 
-    // Since we are using SurfaceData in this pass we should include the normal check
-    half3 normalTS = half3(0, 0, 0);
-    #if defined(_NORMALMAP) && defined(_NORMAL_DROPOFF_TS)
-        normalTS = surfaceDescription.NormalTS;
-    #endif
-
-#ifdef _DBUFFER
-    // ApplyDecal needs modifiable values for metallic and occlusion
-    // but they end up not being used, so feed them a throwaway value
-    float throwaway = 0.0;
+#if defined(_DBUFFER)
     ApplyDecal(unpacked.positionCS,
         surfaceDescription.BaseColor,
         specular,
         inputData.normalWS,
-        /*metallic,*/
-        throwaway,
-        /*surfaceDescription.Occlusion,*/
-        throwaway,
+        metallic,
+        1, // was occlusion
         surfaceDescription.Smoothness);
 #endif
 
-    // in SimpleLitForwardPass GlobalIllumination (and temporarily UniversalBlinnPhong) are called inside UniversalFragmentBlinnPhong
+    InitializeBakedGIData(unpacked, inputData);
+
+    // in LitForwardPass GlobalIllumination (and temporarily LightingPhysicallyBased) are called inside UniversalFragmentPBR
     // in Deferred rendering we store the sum of these values (and of emission as well) in the GBuffer
-    //BRDFData brdfData;
-    //InitializeBRDFData(surfaceDescription.BaseColor, metallic, specular, surfaceDescription.Smoothness, alpha, brdfData);
-
-    SurfaceData surface;
-    surface.albedo              = surfaceDescription.BaseColor;
-    surface.metallic            = 0.0; //saturate(metallic);
-    surface.specular            = specular;
-    surface.smoothness          = saturate(surfaceDescription.Smoothness),
-    surface.occlusion           = 1.0; //surfaceDescription.Occlusion,
-    surface.emission            = surfaceDescription.Emission,
-    surface.alpha               = saturate(alpha);
-    surface.normalTS            = normalTS;
-    surface.clearCoatMask       = 0;
-    surface.clearCoatSmoothness = 1;
-
-#if UNITY_VERSION >= 202210
-    surface.albedo = AlphaModulate(surface.albedo, surface.alpha);
-#endif
+    BRDFData brdfData;
+    InitializeBRDFData(surfaceDescription.BaseColor, metallic, specular, surfaceDescription.Smoothness, alpha, brdfData);
 
     Light mainLight = GetMainLight(inputData.shadowCoord, inputData.positionWS, inputData.shadowMask);
     MixRealtimeAndBakedGI(mainLight, inputData.normalWS, inputData.bakedGI, inputData.shadowMask);
-    //half3 color = GlobalIllumination(brdfData, inputData.bakedGI, surfaceDescription.Occlusion, inputData.positionWS, inputData.normalWS, inputData.viewDirectionWS);
-    half4 color = half4(inputData.bakedGI * surface.albedo + surface.emission, surface.alpha);
+    half3 color = GlobalIllumination(brdfData, inputData.bakedGI, 1, inputData.positionWS, inputData.normalWS, inputData.viewDirectionWS);
 
-    //return BRDFDataToGbuffer(brdfData, inputData, surfaceDescription.Smoothness, surfaceDescription.Emission + color, surfaceDescription.Occlusion);
-    return SurfaceDataToGbuffer(surface, inputData, color.rgb, kLightingSimpleLit);
+    return PackGBuffersBRDFData(brdfData, inputData, surfaceDescription.Smoothness, surfaceDescription.Emission + color, 1);
 }
