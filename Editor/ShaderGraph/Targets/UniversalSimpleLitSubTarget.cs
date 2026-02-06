@@ -864,6 +864,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreKeywordDescriptors.LightCookies },
                 { CoreKeywordDescriptors.ClusterLightLoop },
                 { CoreKeywordDescriptors.EvaluateSh },
+                { CoreKeywordDescriptors.Tonemap },
             };
 
             public static readonly KeywordCollection GBuffer = new KeywordCollection
@@ -892,6 +893,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         #region Includes
         static class SimpleLitIncludes
         {
+            const string kTonemapping = "Packages/com.unity.render-pipelines.universal/Shaders/Tonemapping.hlsl";
             const string kShadows = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl";
             const string kMetaInput = "Packages/com.unity.render-pipelines.universal/ShaderLibrary/MetaInput.hlsl";
             const string kForwardPass = "Packages/com.pawige.universal-shadergraph-extensions/Editor/ShaderGraph/Includes/SimpleLitForwardPass.hlsl";
@@ -929,6 +931,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreIncludes.ProbeVolumePregraph },
                 { CoreIncludes.CorePregraph },
                 { kShadows, IncludeLocation.Pregraph },
+                { kTonemapping, IncludeLocation.Pregraph },
                 { CoreIncludes.ShaderGraphPregraph },
                 { CoreIncludes.DBufferPregraph },
 

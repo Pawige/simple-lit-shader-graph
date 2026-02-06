@@ -156,7 +156,7 @@ void frag(
     
     color.a = OutputAlpha(color.a, isTransparent);
 
-    outColor = color;
+    outColor = FragTonemap(color);
 
     #ifdef _WRITE_RENDERING_LAYERS
     outRenderingLayers = EncodeMeshRenderingLayer();
