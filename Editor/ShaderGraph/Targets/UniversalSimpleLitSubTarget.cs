@@ -914,6 +914,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 { CoreIncludes.ProbeVolumePregraph },
                 { CoreIncludes.CorePregraph },
                 { kShadows, IncludeLocation.Pregraph },
+                { kTonemapping, IncludeLocation.Pregraph },
                 { CoreIncludes.ShaderGraphPregraph },
                 { CoreIncludes.DBufferPregraph },
 
