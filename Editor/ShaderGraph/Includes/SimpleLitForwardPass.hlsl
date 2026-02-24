@@ -152,11 +152,12 @@ void frag(
     InitializeBakedGIData(unpacked, inputData);
     
     half4 color = UniversalFragmentBlinnPhong(inputData, surface);
+    color = FragTonemap(color);
     color.rgb = MixFog(color.rgb, inputData.fogCoord);
     
     color.a = OutputAlpha(color.a, isTransparent);
 
-    outColor = FragTonemap(color);
+    outColor = color;
 
     #ifdef _WRITE_RENDERING_LAYERS
     outRenderingLayers = EncodeMeshRenderingLayer();
