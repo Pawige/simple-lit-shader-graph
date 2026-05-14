@@ -32,6 +32,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         bool m_SpecularHighlights = false;
 
         [SerializeField]
+        bool m_NoFog = false;
+
+        [SerializeField]
         NormalDropOffSpace m_NormalDropOffSpace = NormalDropOffSpace.Tangent;
 
         [SerializeField]
@@ -55,6 +58,12 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         {
             get => m_SpecularHighlights;
             set => m_SpecularHighlights = value;
+        }
+
+        public bool noFog
+        {
+            get => m_NoFog;
+            set => m_NoFog = value;
         }
 
         public NormalDropOffSpace normalDropOffSpace
@@ -91,13 +100,13 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
             // Process SubShaders
 #if UNITY_2022_2_15_OR_NEWER
-            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights)));
+            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights, noFog)));
 #elif UNITY_2022_1_OR_NEWER
-            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitComputeDotsSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights)));
-            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitGLESSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights)));
+            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitComputeDotsSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights, noFog)));
+            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitGLESSubShader(target, target.renderType, target.renderQueue, blendModePreserveSpecular, specularHighlights, noFog)));
 #else
-            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitComputeDotsSubShader(target, target.renderType, target.renderQueue, specularHighlights)));
-            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitGLESSubShader(target, target.renderType, target.renderQueue, specularHighlights)));
+            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitComputeDotsSubShader(target, target.renderType, target.renderQueue, specularHighlights, noFog)));
+            context.AddSubShader(PostProcessSubShader(SubShaders.SimpleLitGLESSubShader(target, target.renderType, target.renderQueue, specularHighlights, noFog)));
 #endif
         }
 
@@ -113,6 +122,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 material.SetFloat(SimpleLitProperty.SpecularHighlights, specularHighlights ? 1.0f : 0.0f);
                 material.SetFloat(Property.CastShadows, target.castShadows ? 1.0f : 0.0f);
                 material.SetFloat(Property.ReceiveShadows, target.receiveShadows ? 1.0f : 0.0f);
+                material.SetFloat(SimpleLitProperty.NoFog, noFog ? 1.0f : 0.0f);
                 material.SetFloat(Property.SurfaceType, (float)target.surfaceType);
                 material.SetFloat(Property.BlendMode, (float)target.alphaMode);
                 material.SetFloat(Property.AlphaClip, target.alphaClip ? 1.0f : 0.0f);
@@ -171,6 +181,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 collector.AddFloatProperty(SimpleLitProperty.SpecularHighlights, specularHighlights ? 1.0f : 0.0f);
                 collector.AddFloatProperty(Property.CastShadows, target.castShadows ? 1.0f : 0.0f);
                 collector.AddFloatProperty(Property.ReceiveShadows, target.receiveShadows ? 1.0f : 0.0f);
+                collector.AddFloatProperty(SimpleLitProperty.NoFog, noFog ? 1.0f : 0.0f);
 
                 // setup properties using the defaults
                 collector.AddFloatProperty(Property.SurfaceType, (float)target.surfaceType);
@@ -222,6 +233,16 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
                 registerUndo("Change Specular Highlights");
                 specularHighlights = evt.newValue;
+                onChange();
+            });
+
+            context.AddProperty("No Fog", new Toggle() { value = noFog }, (evt) =>
+            {
+                if (Equals(noFog, evt.newValue))
+                    return;
+
+                registerUndo("Change No Fog");
+                noFog = evt.newValue;
                 onChange();
             });
 
@@ -290,12 +311,12 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
         static class SubShaders
         {
 #if UNITY_2022_2_15_OR_NEWER
-            public static SubShaderDescriptor SimpleLitSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights)
+            public static SubShaderDescriptor SimpleLitSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights, bool noFog)
             // SM 4.5, compute with dots instancing
 #elif UNITY_2022_1_OR_NEWER
-            public static SubShaderDescriptor SimpleLitComputeDotsSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights)
+            public static SubShaderDescriptor SimpleLitComputeDotsSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights, bool noFog)
 #else
-            public static SubShaderDescriptor SimpleLitComputeDotsSubShader(UniversalTarget target, string renderType, string renderQueue, bool specularHighlights)
+            public static SubShaderDescriptor SimpleLitComputeDotsSubShader(UniversalTarget target, string renderType, string renderQueue, bool specularHighlights, bool noFog)
 #endif
             {
                 SubShaderDescriptor result = new SubShaderDescriptor()
@@ -309,13 +330,13 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 };
 
 #if UNITY_2022_2_15_OR_NEWER
-                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, CorePragmas.Forward, SimpleLitKeywords.Forward));
+                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, noFog, CorePragmas.Forward, SimpleLitKeywords.Forward));
 #elif UNITY_2022_2_OR_NEWER
-                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, CorePragmas.ForwardSM45, SimpleLitKeywords.DOTSForward));
+                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, noFog, CorePragmas.ForwardSM45, SimpleLitKeywords.DOTSForward));
 #elif UNITY_2022_1_OR_NEWER
-                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, CorePragmas.DOTSForward));
+                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, noFog, CorePragmas.DOTSForward));
 #else
-                result.passes.Add(SimpleLitPasses.Forward(target, specularHighlights, CorePragmas.DOTSForward));
+                result.passes.Add(SimpleLitPasses.Forward(target, specularHighlights, noFog, CorePragmas.DOTSForward));
 #endif
 
 #if UNITY_2022_1_OR_NEWER
@@ -391,9 +412,9 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
 
 #if !UNITY_2022_2_15_OR_NEWER
 #if UNITY_2022_1_OR_NEWER
-            public static SubShaderDescriptor SimpleLitGLESSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights)
+            public static SubShaderDescriptor SimpleLitGLESSubShader(UniversalTarget target, string renderType, string renderQueue, bool blendModePreserveSpecular, bool specularHighlights, bool noFog)
 #else
-            public static SubShaderDescriptor SimpleLitGLESSubShader(UniversalTarget target, string renderType, string renderQueue, bool specularHighlights)
+            public static SubShaderDescriptor SimpleLitGLESSubShader(UniversalTarget target, string renderType, string renderQueue, bool specularHighlights, bool noFog)
 #endif
             {
                 // SM 2.0, GLES
@@ -412,11 +433,11 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 };
 
 #if UNITY_2022_2_OR_NEWER
-                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, CorePragmas.Forward, SimpleLitKeywords.Forward));
+                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, noFog, CorePragmas.Forward, SimpleLitKeywords.Forward));
 #elif UNITY_2022_1_OR_NEWER
-                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights));
+                result.passes.Add(SimpleLitPasses.Forward(target, blendModePreserveSpecular, specularHighlights, noFog));
 #else
-                result.passes.Add(SimpleLitPasses.Forward(target, specularHighlights));
+                result.passes.Add(SimpleLitPasses.Forward(target, specularHighlights, noFog));
 #endif
 
                 // cull the shadowcaster pass if we know it will never be used
@@ -468,17 +489,26 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                     pass.defines.Add(SimpleLitKeywords.ReceiveShadowsOff, 1);
             }
 
+            static void AddNoFogControlToPass(ref PassDescriptor pass, UniversalTarget target, bool noFog)
+            {
+                if (target.allowMaterialOverride)
+                    pass.keywords.Add(SimpleLitKeywords.NoFog);
+                else if (noFog)
+                    pass.defines.Add(SimpleLitKeywords.NoFog, 1);
+            }
+
 #if UNITY_2022_2_OR_NEWER
             public static PassDescriptor Forward(
                 UniversalTarget target,
                 bool blendModePreserveSpecular,
                 bool specularHighlights,
+                bool noFog,
                 PragmaCollection pragmas,
                 KeywordCollection keywords)
 #elif UNITY_2022_1_OR_NEWER
-            public static PassDescriptor Forward(UniversalTarget target, bool blendModePreserveSpecular, bool specularHighlights, PragmaCollection pragmas = null)
+            public static PassDescriptor Forward(UniversalTarget target, bool blendModePreserveSpecular, bool specularHighlights, bool noFog, PragmaCollection pragmas = null)
 #else
-            public static PassDescriptor Forward(UniversalTarget target, bool specularHighlights, PragmaCollection pragmas = null)
+            public static PassDescriptor Forward(UniversalTarget target, bool specularHighlights, bool noFog, PragmaCollection pragmas = null)
 #endif
             {
                 var result = new PassDescriptor()
@@ -532,6 +562,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 AddWorkflowModeControlToPass(ref result, target, workflowMode);
                 AddSpecularHighlightsControlToPass(ref result, target, specularHighlights);
                 AddReceiveShadowsControlToPass(ref result, target, target.receiveShadows);
+                AddNoFogControlToPass(ref result, target, noFog);
 #if UNITY_2022_2_OR_NEWER
                 CorePasses.AddLODCrossFadeControlToPass(ref result, target);
 #endif
@@ -841,6 +872,16 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 scope = KeywordScope.Local,
             };
 
+            public static readonly KeywordDescriptor NoFog = new KeywordDescriptor()
+            {
+                displayName = "No Fog",
+                referenceName = SimpleLitProperty.NoFogKeyword,
+                type = KeywordType.Boolean,
+                definition = KeywordDefinition.ShaderFeature,
+                scope = KeywordScope.Local,
+                stages = KeywordShaderStage.Fragment,
+            };
+
             public static readonly KeywordCollection Forward = new KeywordCollection
             {
                 { CoreKeywordDescriptors.ScreenSpaceAmbientOcclusion },
@@ -972,5 +1013,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
     {
         public static readonly string SpecularColorKeyword = "_SPECULAR_COLOR";
         public static readonly string SpecularHighlights = "_SpecularHighlights";
+        public static readonly string NoFog = "_NoFog";
+        public static readonly string NoFogKeyword = "_NO_FOG";
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Reflection;
 using UnityEditor.Rendering.Universal;
 using UnityEditor.Rendering.Universal.ShaderGUI;
 using UnityEngine;
@@ -11,8 +12,10 @@ namespace UnityEditor
     {
         //public MaterialProperty workflowMode;
         public MaterialProperty specularHighlights;
+        public MaterialProperty noFog;
 
         MaterialProperty[] properties;
+        static readonly bool kBaseShaderGUIDrawsNoFog = typeof(BaseShaderGUI).GetProperty("noFogProp", BindingFlags.Instance | BindingFlags.NonPublic) != null;
 
         // collect properties from the material properties
         public override void FindProperties(MaterialProperty[] properties)
@@ -27,6 +30,7 @@ namespace UnityEditor
             base.FindProperties(properties);
             //workflowMode = BaseShaderGUI.FindProperty(Property.SpecularWorkflowMode, properties, false);#
             specularHighlights = BaseShaderGUI.FindProperty(Rendering.Universal.ShaderGraph.SimpleLitProperty.SpecularHighlights, properties, false);
+            noFog = BaseShaderGUI.FindProperty(Rendering.Universal.ShaderGraph.SimpleLitProperty.NoFog, properties, false);
         }
 
         public static void UpdateMaterial(Material material, MaterialUpdateType updateType)
@@ -43,6 +47,12 @@ namespace UnityEditor
                     material, 
                     Rendering.Universal.ShaderGraph.SimpleLitProperty.SpecularColorKeyword, 
                     material.GetFloat(Rendering.Universal.ShaderGraph.SimpleLitProperty.SpecularHighlights) != 0.0f);
+
+            if (material.HasProperty(Rendering.Universal.ShaderGraph.SimpleLitProperty.NoFog))
+                UnityEngine.Rendering.CoreUtils.SetKeyword(
+                    material,
+                    Rendering.Universal.ShaderGraph.SimpleLitProperty.NoFogKeyword,
+                    material.GetFloat(Rendering.Universal.ShaderGraph.SimpleLitProperty.NoFog) != 0.0f);
         }
 
         public override void ValidateMaterial(Material material)
@@ -65,6 +75,9 @@ namespace UnityEditor
             //if (workflowMode != null)
             //    DoPopup(LitGUI.Styles.workflowModeText, workflowMode, Enum.GetNames(typeof(LitGUI.WorkflowMode)));
             base.DrawSurfaceOptions(material);
+
+            if (noFog != null && !kBaseShaderGUIDrawsNoFog)
+                DrawFloatToggleProperty(noFogText, noFog);
         }
 
         // material main surface inputs
@@ -75,6 +88,8 @@ namespace UnityEditor
 
         public static readonly GUIContent specularHighlightsText = EditorGUIUtility.TrTextContent("Specular Highlights",
             "When enabled, this GameObject will receive Specular Highlights.");
+        public static readonly GUIContent noFogText = EditorGUIUtility.TrTextContent("No Fog",
+            "When enabled, this material will not receive scene fog.");
 
         public override void DrawAdvancedOptions(Material material)
         {

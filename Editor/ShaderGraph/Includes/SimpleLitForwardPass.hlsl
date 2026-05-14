@@ -153,7 +153,9 @@ void frag(
     
     half4 color = UniversalFragmentBlinnPhong(inputData, surface);
     color = FragTonemap(color);
+#if !defined(_NO_FOG)
     color.rgb = MixFog(color.rgb, inputData.fogCoord);
+#endif
     
     color.a = OutputAlpha(color.a, isTransparent);
 
