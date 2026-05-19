@@ -129,6 +129,7 @@ namespace UnityEditor.Rendering.Universal.ShaderGraph
                 material.SetFloat(Property.CullMode, (int)target.renderFace);
                 material.SetFloat(Property.ZWriteControl, (float)target.zWriteControl);
                 material.SetFloat(Property.ZTest, (float)target.zTestMode);
+                target.SetMaterialStencilProperties(material);
             }
 
             // We always need these properties regardless of whether the material is allowed to override
